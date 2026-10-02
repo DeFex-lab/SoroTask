@@ -1,5 +1,7 @@
 /// Normalized task storage layout — decoupled sub-keys for gas-efficient reads.
 
+use soroban_sdk::{Address, Bytes, BytesN, Env, Symbol, Vec, Val};
+
 use soroban_sdk::{Address, Env, Symbol, Val, Vec};
 
 use crate::DataKey;
@@ -94,10 +96,33 @@ pub fn schema_version(env: &Env) -> u32 {
         .unwrap_or(1)
 }
 
+/// Hashes the canonical persisted-layout descriptor for a supported schema.
+pub fn schema_layout_hash(env: &Env, version: u32) -> Option<BytesN<32>> {
+    let descriptor: &[u8] = match version {
+        1 => b"SoroTaskSchema:v1:TaskConfig(creator,target,function,args,resolver,interval,last_run,gas_balance,whitelist,is_active,blocked_by,yield_strategy,permissions)",
+        2 => b"SoroTaskSchema:v2:TaskMeta(creator,interval,last_run,gas_balance,is_active,blocked_by,resolver,whitelist,yield_strategy,permissions);TaskPayload(target,function,args);TaskStats(run_count,failure_count,last_ledger)",
+        _ => return None,
+    };
+    Some(env.crypto().sha256(&Bytes::from_slice(env, descriptor)).into())
+}
+
+/// Returns the stored schema fingerprint, deriving it for legacy instances.
+pub fn schema_hash(env: &Env) -> Option<BytesN<32>> {
+    env.storage()
+        .instance()
+        .get(&DataKey::StorageSchemaHash)
+        .or_else(|| schema_layout_hash(env, schema_version(env)))
+}
+
 pub fn set_schema_version(env: &Env, version: u32) {
     env.storage()
         .instance()
         .set(&DataKey::StorageSchemaVersion, &version);
+    if let Some(hash) = schema_layout_hash(env, version) {
+        env.storage()
+            .instance()
+            .set(&DataKey::StorageSchemaHash, &hash);
+    }
 }
 
 pub fn has_split_layout(env: &Env, task_id: u64) -> bool {
