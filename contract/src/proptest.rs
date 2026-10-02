@@ -1,3 +1,8 @@
+use crate::{
+    SoroTaskContract, SoroTaskContractClient, TaskConfig, BRONZE_EFFECTIVE_STAKE,
+    GOLD_EFFECTIVE_STAKE, SILVER_EFFECTIVE_STAKE,
+};
+
 //! Mathematical & invariant fuzzing harness (Issue #1196).
 //!
 //! Three layers of property coverage:
@@ -446,6 +451,30 @@ proptest! {
 
         assert_solvency(&client, &token_client, &contract_id, &model)?;
         assert_storage_matches_model(&client, &model)?;
+    }
+
+    #[test]
+    fn test_staking_fee_discount_matches_effective_stake_tier(
+        amount in 0i128..200_000i128,
+    ) {
+        let (env, client) = setup_with_token();
+        client.init_staking_pool(&0);
+        let staker = Address::generate(&env);
+
+        if amount > 0 {
+            client.stake_tokens(&staker, &amount);
+        }
+
+        let expected_discount = if amount >= GOLD_EFFECTIVE_STAKE {
+            5_000
+        } else if amount >= SILVER_EFFECTIVE_STAKE {
+            2_500
+        } else if amount >= BRONZE_EFFECTIVE_STAKE {
+            1_000
+        } else {
+            0
+        };
+        prop_assert_eq!(client.get_staking_fee_discount_bps(&staker), expected_discount);
     }
 }
 
